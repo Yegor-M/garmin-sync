@@ -8,6 +8,7 @@ Usage:
 """
 
 import argparse
+import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -20,6 +21,9 @@ load_dotenv()
 
 DB_PATH = Path(__file__).parent / "garmin.duckdb"
 SCHEMA_PATH = Path(__file__).parent / "schema.sql"
+
+# Show one line per day for short syncs; milestone % updates for long ones
+VERBOSE_THRESHOLD = 14
 
 
 def _init_db(con: duckdb.DuckDBPyConnection) -> None:
@@ -88,6 +92,20 @@ def _extract_sleep(data: dict) -> dict:
     }
 
 
+def _extract_hrv(data: dict) -> dict:
+    summary = (data or {}).get("hrvSummary") or {}
+    if not summary:
+        return {}
+    baseline = summary.get("baseline") or {}
+    return {
+        "hrv_weekly_avg":    summary.get("weeklyAvg"),
+        "hrv_last_night":    summary.get("lastNightAvg"),
+        "hrv_baseline_low":  baseline.get("balancedLow"),
+        "hrv_baseline_high": baseline.get("balancedUpper"),
+        "hrv_status":        summary.get("status"),
+    }
+
+
 def _extract_training_readiness(data) -> dict:
     item = (data or [{}])[0] if isinstance(data, list) else (data or {})
     hrv_weekly = item.get("hrvWeeklyAverage")
@@ -110,59 +128,34 @@ def _extract_fitness_age(data: dict) -> dict:
     return {"fitness_age": (data or {}).get("fitnessAge")}
 
 
-def _extract_hrv(data: dict) -> dict:
-    summary = (data or {}).get("hrvSummary") or {}
-    if not summary:
-        return {}
-    baseline = summary.get("baseline") or {}
-    return {
-        "hrv_weekly_avg":   summary.get("weeklyAvg"),
-        "hrv_last_night":   summary.get("lastNightAvg"),
-        "hrv_baseline_low": baseline.get("balancedLow"),
-        "hrv_baseline_high": baseline.get("balancedUpper"),
-        "hrv_status":       summary.get("status"),
-    }
-
-
-def _fetch_day(api, d: str) -> dict:
+def _fetch_day(api, d: str) -> tuple[dict, list[str]]:
+    """Returns (row_dict, list_of_error_strings). Never raises."""
     row: dict = {"date": d}
+    errors: list[str] = []
 
-    try:
-        row.update(_extract_stats(api.get_stats(d) or {}))
-    except Exception as e:
-        print(f"    stats error: {e}")
+    def try_update(name: str, extract_fn):
+        try:
+            row.update(extract_fn())
+        except Exception as e:
+            errors.append(f"{name}: {e}")
 
-    try:
-        row.update(_extract_sleep(api.get_sleep_data(d)))
-    except Exception as e:
-        print(f"    sleep error: {e}")
-
-    try:
-        row.update(_extract_hrv(api.get_hrv_data(d)))
-    except Exception as e:
-        print(f"    hrv error: {e}")
+    try_update("stats",    lambda: _extract_stats(api.get_stats(d) or {}))
+    try_update("sleep",    lambda: _extract_sleep(api.get_sleep_data(d)))
+    try_update("hrv",      lambda: _extract_hrv(api.get_hrv_data(d)))
 
     try:
         tr = _extract_training_readiness(api.get_training_readiness(d))
         hrv_fallback = tr.pop("_hrv_weekly_from_readiness", None)
         row.update(tr)
-        # use readiness HRV weekly avg as fallback if hrv endpoint returned null
         if hrv_fallback and not row.get("hrv_weekly_avg"):
             row["hrv_weekly_avg"] = hrv_fallback
     except Exception as e:
-        print(f"    training_readiness error: {e}")
+        errors.append(f"training_readiness: {e}")
 
-    try:
-        row.update(_extract_endurance_score(api.get_endurance_score(d, d)))
-    except Exception as e:
-        print(f"    endurance_score error: {e}")
+    try_update("endurance", lambda: _extract_endurance_score(api.get_endurance_score(d, d)))
+    try_update("fitness_age", lambda: _extract_fitness_age(api.get_fitnessage_data(d)))
 
-    try:
-        row.update(_extract_fitness_age(api.get_fitnessage_data(d)))
-    except Exception as e:
-        print(f"    fitness_age error: {e}")
-
-    return row
+    return row, errors
 
 
 def _upsert(con: duckdb.DuckDBPyConnection, table: str, pk: str, row: dict) -> None:
@@ -176,13 +169,15 @@ def _upsert(con: duckdb.DuckDBPyConnection, table: str, pk: str, row: dict) -> N
     )
 
 
-def _fetch_activities(api, start: str, end: str) -> list[dict]:
-    rows = []
+def _fetch_activities(api, start: str, end: str) -> tuple[list[dict], list[str]]:
+    """Returns (rows, errors). Never raises."""
+    rows: list[dict] = []
+    errors: list[str] = []
+
     try:
         activities = api.get_activities_by_date(start, end) or []
     except Exception as e:
-        print(f"  activities list error: {e}")
-        return rows
+        return rows, [f"activities list: {e}"]
 
     for a in activities:
         activity_id = str(a.get("activityId") or "")
@@ -212,11 +207,11 @@ def _fetch_activities(api, start: str, end: str) -> list[dict]:
             for i, z in enumerate(zones[:5], 1):
                 row[f"hr_zone{i}_min"] = _secs_to_min(z.get("secsInZone"))
         except Exception as e:
-            print(f"    zones for {activity_id}: {e}")
+            errors.append(f"zones {activity_id}: {e}")
 
         rows.append(row)
 
-    return rows
+    return rows, errors
 
 
 # ---------------------------------------------------------------------------
@@ -225,30 +220,60 @@ def _fetch_activities(api, start: str, end: str) -> list[dict]:
 
 def sync_range(start: date, end: date) -> None:
     total = (end - start).days + 1
+    verbose = total <= VERBOSE_THRESHOLD
+    milestone = max(1, round(total / 10))
+
+    t0 = time.monotonic()
     print(f"Syncing {start} → {end} ({total} day{'s' if total != 1 else ''})")
 
     api = get_client()
     con = duckdb.connect(str(DB_PATH))
     _init_db(con)
 
+    all_errors: list[str] = []
+    partial_days = 0
+
     d = start
     i = 0
     while d <= end:
         i += 1
         ds = d.isoformat()
-        print(f"  [{i}/{total}] {ds} ...", end=" ", flush=True)
-        row = _fetch_day(api, ds)
+        row, errors = _fetch_day(api, ds)
         _upsert(con, "health_days", "date", row)
-        print("ok")
+
+        if errors:
+            partial_days += 1
+            all_errors.extend([f"  {ds} {e}" for e in errors])
+
+        if verbose:
+            status = f"partial ({', '.join(e.split(':')[0] for e in errors)})" if errors else "ok"
+            print(f"  [{i}/{total}] {ds} {status}")
+        elif i % milestone == 0 or i == total:
+            pct = round(i / total * 100)
+            status = f"+{len([e for e in all_errors if ds in e])} errors" if errors else "ok"
+            print(f"  [{i}/{total}] {ds} ({pct}%) {status}")
+
         d += timedelta(days=1)
 
-    print(f"\nFetching activities {start} → {end} ...", end=" ", flush=True)
-    activity_rows = _fetch_activities(api, start.isoformat(), end.isoformat())
+    # Activities
+    print(f"Activities {start} → {end} ...", end=" ", flush=True)
+    activity_rows, act_errors = _fetch_activities(api, start.isoformat(), end.isoformat())
     for row in activity_rows:
         _upsert(con, "health_activities", "activity_id", row)
-        print(f"\n  {row['date']} {row['activity_type']} ({row['duration_min']} min)", end="")
+    all_errors.extend([f"  {e}" for e in act_errors])
+    print(f"{len(activity_rows)} synced")
 
-    print(f"\n\nDone. {total} days, {len(activity_rows)} activities → {DB_PATH}")
+    # Summary
+    elapsed = time.monotonic() - t0
+    error_count = len(all_errors)
+    print(f"\nDone — {total} days ({partial_days} partial), {len(activity_rows)} activities, "
+          f"{error_count} error{'s' if error_count != 1 else ''} [{elapsed:.1f}s]")
+
+    if all_errors:
+        print("\nErrors:")
+        for e in all_errors:
+            print(e)
+
     con.close()
 
 
