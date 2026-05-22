@@ -9,7 +9,7 @@ Usage:
 
 import argparse
 import time
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import duckdb
@@ -37,7 +37,7 @@ def _secs_to_min(v) -> float | None:
 def _ms_to_ts(ms) -> str | None:
     if not ms:
         return None
-    return datetime.utcfromtimestamp(ms / 1000).isoformat()
+    return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).replace(tzinfo=None).isoformat()
 
 
 # ---------------------------------------------------------------------------
