@@ -1,8 +1,10 @@
 """
 Garmin Connect authentication with session persistence.
 
-First run will prompt for MFA if enabled on the account.
-Subsequent runs reuse the saved session from .garth/.
+First run: use auth_interactive.py instead — it uses garth directly and
+handles MFA + CAPTCHA more reliably than the scripted flow here.
+
+Subsequent runs reuse the saved session from .garth/ automatically.
 
 Credentials via env vars:
   GARMIN_EMAIL
