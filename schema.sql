@@ -50,7 +50,11 @@ CREATE TABLE IF NOT EXISTS health_days (
     -- SpO2 & respiration (daytime)
     spo2_avg              FLOAT,
     spo2_min              FLOAT,
-    rr_waking_avg         FLOAT
+    rr_waking_avg         FLOAT,
+
+    -- training readiness (Garmin composite score)
+    training_readiness_score  INTEGER,
+    training_readiness_level  VARCHAR
 );
 
 CREATE TABLE IF NOT EXISTS health_activities (

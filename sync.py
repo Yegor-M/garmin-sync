@@ -56,7 +56,7 @@ def _extract_stats(s: dict) -> dict:
         "stress_avg":            s.get("averageStressLevel"),
         "bb_max":                s.get("bodyBatteryHighestValue"),
         "bb_min":                s.get("bodyBatteryLowestValue"),
-        "bb_end":                s.get("bodyBatteryChargedValue"),
+        "bb_end":                s.get("bodyBatteryMostRecentValue"),
         "moderate_activity_min": s.get("moderateIntensityMinutes"),
         "vigorous_activity_min": s.get("vigorousIntensityMinutes"),
         "spo2_avg":              s.get("averageSpo2"),
@@ -88,6 +88,14 @@ def _extract_sleep(data: dict) -> dict:
     }
 
 
+def _extract_training_readiness(data) -> dict:
+    item = (data or [{}])[0] if isinstance(data, list) else (data or {})
+    return {
+        "training_readiness_score": item.get("score"),
+        "training_readiness_level": item.get("level"),
+    }
+
+
 def _extract_hrv(data: dict) -> dict:
     summary = (data or {}).get("hrvSummary") or {}
     if not summary:
@@ -95,7 +103,7 @@ def _extract_hrv(data: dict) -> dict:
     baseline = summary.get("baseline") or {}
     return {
         "hrv_weekly_avg":   summary.get("weeklyAvg"),
-        "hrv_last_night":   summary.get("lastNight"),
+        "hrv_last_night":   summary.get("lastNightAvg"),
         "hrv_baseline_low": baseline.get("balancedLow"),
         "hrv_baseline_high": baseline.get("balancedUpper"),
         "hrv_status":       summary.get("status"),
@@ -119,6 +127,11 @@ def _fetch_day(api, d: str) -> dict:
         row.update(_extract_hrv(api.get_hrv_data(d)))
     except Exception as e:
         print(f"    hrv error: {e}")
+
+    try:
+        row.update(_extract_training_readiness(api.get_training_readiness(d)))
+    except Exception as e:
+        print(f"    training_readiness error: {e}")
 
     return row
 

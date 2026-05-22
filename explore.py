@@ -52,7 +52,7 @@ def explore(target_date: str) -> None:
 
         # Stress & Body Battery
         ("stress",              lambda: api.get_stress_data(target_date)),
-        ("body_battery",        lambda: api.get_body_battery([target_date])),
+        ("body_battery",        lambda: api.get_body_battery(target_date)),
 
         # HRV
         ("hrv",                 lambda: api.get_hrv_data(target_date)),
@@ -64,7 +64,6 @@ def explore(target_date: str) -> None:
         # Training
         ("training_status",     lambda: api.get_training_status(target_date)),
         ("training_readiness",  lambda: api.get_training_readiness(target_date)),
-        ("training_load",       lambda: api.get_training_load(target_date)),
 
         # Activities (last 7 days for a richer sample)
         ("activities_week",     lambda: api.get_activities_by_date(week_ago, target_date)),
@@ -75,7 +74,7 @@ def explore(target_date: str) -> None:
 
         # Floors / intensity minutes
         ("floors",              lambda: api.get_floors(target_date)),
-        ("intensity_minutes",   lambda: api.get_intensity_minutes_weekly(target_date)),
+        ("intensity_minutes",   lambda: api.get_intensity_minutes_data(target_date)),
 
         # Hydration (if tracked)
         ("hydration",           lambda: api.get_hydration_data(target_date)),
