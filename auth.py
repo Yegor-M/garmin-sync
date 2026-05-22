@@ -61,10 +61,12 @@ def get_client() -> Garmin:
 
     client = Garmin(email, password, prompt_mfa=lambda: input("MFA code: "))
 
+    TOKENSTORE.mkdir(exist_ok=True)
+
     signal.signal(signal.SIGALRM, _timeout_handler)
     signal.alarm(LOGIN_TIMEOUT)
     try:
-        client.login()
+        client.login(str(TOKENSTORE))  # garminconnect saves the session itself
         signal.alarm(0)
     except TimeoutError:
         print(f"\nERROR: Login timed out after {LOGIN_TIMEOUT}s.")
@@ -82,8 +84,6 @@ def get_client() -> Garmin:
             print(f"\nERROR: Login failed — {e}")
         sys.exit(1)
 
-    TOKENSTORE.mkdir(exist_ok=True)
-    client.garth.dump(str(TOKENSTORE))
     print(f"Session saved to {TOKENSTORE}")
     return client
 
