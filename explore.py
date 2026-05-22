@@ -62,22 +62,42 @@ def explore(target_date: str) -> None:
         ("spo2",                lambda: api.get_spo2_data(target_date)),
 
         # Training
-        ("training_status",     lambda: api.get_training_status(target_date)),
-        ("training_readiness",  lambda: api.get_training_readiness(target_date)),
+        ("training_status",           lambda: api.get_training_status(target_date)),
+        ("training_readiness",        lambda: api.get_training_readiness(target_date)),
+        ("training_readiness_morning",lambda: api.get_morning_training_readiness(target_date)),
+        ("endurance_score",           lambda: api.get_endurance_score(target_date, target_date)),
+        ("running_tolerance",         lambda: api.get_running_tolerance(week_ago, target_date)),
+        ("hill_score",                lambda: api.get_hill_score(target_date, target_date)),
+
+        # Fitness metrics
+        ("max_metrics",               lambda: api.get_max_metrics(target_date)),
+        ("fitness_age",               lambda: api.get_fitnessage_data(target_date)),
+        ("lactate_threshold",         lambda: api.get_lactate_threshold()),
+
+        # Body composition & weight
+        ("body_composition",          lambda: api.get_body_composition(target_date)),
+        ("weigh_ins_daily",           lambda: api.get_daily_weigh_ins(target_date)),
+
+        # Weekly summaries
+        ("weekly_stress",             lambda: api.get_weekly_stress(target_date)),
+        ("weekly_intensity_minutes",  lambda: api.get_weekly_intensity_minutes(week_ago, target_date)),
 
         # Activities (last 7 days for a richer sample)
-        ("activities_week",     lambda: api.get_activities_by_date(week_ago, target_date)),
+        ("activities_week",           lambda: api.get_activities_by_date(week_ago, target_date)),
 
         # Personal records & predictions
-        ("personal_records",    lambda: api.get_personal_record()),
-        ("race_predictions",    lambda: api.get_race_predictions()),
+        ("personal_records",          lambda: api.get_personal_record()),
+        ("race_predictions",          lambda: api.get_race_predictions()),
 
         # Floors / intensity minutes
-        ("floors",              lambda: api.get_floors(target_date)),
-        ("intensity_minutes",   lambda: api.get_intensity_minutes_data(target_date)),
+        ("floors",                    lambda: api.get_floors(target_date)),
+        ("intensity_minutes",         lambda: api.get_intensity_minutes_data(target_date)),
 
         # Hydration (if tracked)
-        ("hydration",           lambda: api.get_hydration_data(target_date)),
+        ("hydration",                 lambda: api.get_hydration_data(target_date)),
+
+        # Blood pressure (if tracked)
+        ("blood_pressure",            lambda: api.get_blood_pressure(target_date, target_date)),
     ]
 
     for name, fn in endpoints:
@@ -92,8 +112,13 @@ def explore(target_date: str) -> None:
         activities = json.loads((OUT / "activities_week.json").read_text())
         if activities:
             activity_id = activities[0]["activityId"]
-            dump("activity_detail_sample", api.get_activity_details(activity_id))
-            dump("activity_hr_sample",     api.get_activity_hr_in_timezones(activity_id))
+            dump("activity_detail_sample",  api.get_activity_details(activity_id))
+            dump("activity_hr_sample",      api.get_activity_hr_in_timezones(activity_id))
+            dump("activity_splits_sample",  api.get_activity_splits(activity_id))
+            dump("activity_weather_sample", api.get_activity_weather(activity_id))
+            dump("activity_power_sample",   api.get_activity_power_in_timezones(activity_id))
+        else:
+            print(f"  {'activity extras':40s} SKIP — no activities this week")
     except Exception as e:
         print(f"  activity_detail_sample                   SKIP — {e}")
 

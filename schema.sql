@@ -54,7 +54,12 @@ CREATE TABLE IF NOT EXISTS health_days (
 
     -- training readiness (Garmin composite score)
     training_readiness_score  INTEGER,
-    training_readiness_level  VARCHAR
+    training_readiness_level  VARCHAR,
+    recovery_time_hours       INTEGER,
+
+    -- long-term fitness metrics (update slowly)
+    endurance_score           INTEGER,
+    fitness_age               FLOAT
 );
 
 CREATE TABLE IF NOT EXISTS health_activities (

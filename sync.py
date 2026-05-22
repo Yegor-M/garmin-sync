@@ -90,10 +90,24 @@ def _extract_sleep(data: dict) -> dict:
 
 def _extract_training_readiness(data) -> dict:
     item = (data or [{}])[0] if isinstance(data, list) else (data or {})
+    hrv_weekly = item.get("hrvWeeklyAverage")
     return {
         "training_readiness_score": item.get("score"),
         "training_readiness_level": item.get("level"),
+        "recovery_time_hours":      item.get("recoveryTime"),
+        # hrvWeeklyAverage is in 0.1ms units — convert to ms
+        # used as fallback when hrv endpoint weeklyAvg is null (during onboarding)
+        "_hrv_weekly_from_readiness": round(hrv_weekly / 10, 1) if hrv_weekly else None,
     }
+
+
+def _extract_endurance_score(data: dict) -> dict:
+    dto = (data or {}).get("enduranceScoreDTO") or {}
+    return {"endurance_score": dto.get("overallScore")}
+
+
+def _extract_fitness_age(data: dict) -> dict:
+    return {"fitness_age": (data or {}).get("fitnessAge")}
 
 
 def _extract_hrv(data: dict) -> dict:
@@ -129,9 +143,24 @@ def _fetch_day(api, d: str) -> dict:
         print(f"    hrv error: {e}")
 
     try:
-        row.update(_extract_training_readiness(api.get_training_readiness(d)))
+        tr = _extract_training_readiness(api.get_training_readiness(d))
+        hrv_fallback = tr.pop("_hrv_weekly_from_readiness", None)
+        row.update(tr)
+        # use readiness HRV weekly avg as fallback if hrv endpoint returned null
+        if hrv_fallback and not row.get("hrv_weekly_avg"):
+            row["hrv_weekly_avg"] = hrv_fallback
     except Exception as e:
         print(f"    training_readiness error: {e}")
+
+    try:
+        row.update(_extract_endurance_score(api.get_endurance_score(d, d)))
+    except Exception as e:
+        print(f"    endurance_score error: {e}")
+
+    try:
+        row.update(_extract_fitness_age(api.get_fitnessage_data(d)))
+    except Exception as e:
+        print(f"    fitness_age error: {e}")
 
     return row
 
