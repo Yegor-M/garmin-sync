@@ -224,25 +224,31 @@ def _fetch_activities(api, start: str, end: str) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 def sync_range(start: date, end: date) -> None:
+    total = (end - start).days + 1
+    print(f"Syncing {start} → {end} ({total} day{'s' if total != 1 else ''})")
+
     api = get_client()
     con = duckdb.connect(str(DB_PATH))
     _init_db(con)
 
     d = start
+    i = 0
     while d <= end:
+        i += 1
         ds = d.isoformat()
-        print(f"  {ds} ...", end=" ", flush=True)
+        print(f"  [{i}/{total}] {ds} ...", end=" ", flush=True)
         row = _fetch_day(api, ds)
         _upsert(con, "health_days", "date", row)
         print("ok")
         d += timedelta(days=1)
 
-    print(f"\n  activities {start} → {end} ...", end=" ", flush=True)
-    for row in _fetch_activities(api, start.isoformat(), end.isoformat()):
+    print(f"\nFetching activities {start} → {end} ...", end=" ", flush=True)
+    activity_rows = _fetch_activities(api, start.isoformat(), end.isoformat())
+    for row in activity_rows:
         _upsert(con, "health_activities", "activity_id", row)
-        print(f"\n    {row['date']} {row['activity_type']} ({row['duration_min']} min)", end="")
+        print(f"\n  {row['date']} {row['activity_type']} ({row['duration_min']} min)", end="")
 
-    print("\n\nDone.")
+    print(f"\n\nDone. {total} days, {len(activity_rows)} activities → {DB_PATH}")
     con.close()
 
 
