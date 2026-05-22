@@ -12,7 +12,10 @@ Credentials via env vars:
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
 from garminconnect import Garmin
+
+load_dotenv()
 
 TOKENSTORE = Path(__file__).parent / ".garth"
 
@@ -29,7 +32,7 @@ def get_client() -> Garmin:
         except Exception:
             pass  # token expired or invalid — fall through to fresh auth
 
-    client = Garmin(email, password)
+    client = Garmin(email, password, prompt_mfa=lambda: input("MFA code: "))
     client.login()
     TOKENSTORE.mkdir(exist_ok=True)
     client.garth.dump(str(TOKENSTORE))
