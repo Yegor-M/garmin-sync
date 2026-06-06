@@ -40,6 +40,24 @@ garmin.duckdb        — gitignored; the output database read by Personalkin
 - `schema.sql` — source of truth for column names; sync.py builds INSERT statements dynamically from dict keys, so column names must match exactly
 - `explore.py` — run this on a new date after adding endpoints to verify responses before wiring into sync.py
 
+## PR workflow
+All changes go through PRs — even solo work, for history and review.
+
+```bash
+git checkout -b feat/short-description   # or fix/ or chore/
+# ... make changes ...
+git add <files>
+git commit -m "feat: description"
+git push -u origin feat/short-description
+gh pr create --fill                      # uses PR template automatically
+```
+
+PR template is at `.github/pull_request_template.md` — fill in What / Why / Schema changes / checklist.
+
+**Schema changes**: `schema.sql` uses `IF NOT EXISTS` so new columns need an `ALTER TABLE` on existing DBs.
+Adding columns to an existing install: `ALTER TABLE health_days ADD COLUMN col_name TYPE;`
+If the column is new and no existing data is worth preserving: delete `garmin.duckdb` and run `sync.py --backfill N`.
+
 ## Adding a new endpoint
 1. Add the call to `explore.py` endpoints list
 2. Run `explore.py` to see the raw JSON
