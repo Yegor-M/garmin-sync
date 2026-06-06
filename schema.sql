@@ -81,5 +81,7 @@ CREATE TABLE IF NOT EXISTS health_activities (
     hr_zone2_min          FLOAT,
     hr_zone3_min          FLOAT,
     hr_zone4_min          FLOAT,
-    hr_zone5_min          FLOAT
+    hr_zone5_min          FLOAT,
+
+    avg_pace_min_km       FLOAT   -- min/km; null for non-GPS activities (MMA, strength, etc.)
 );
