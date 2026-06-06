@@ -128,6 +128,30 @@ def _extract_fitness_age(data: dict) -> dict:
     return {"fitness_age": (data or {}).get("fitnessAge")}
 
 
+def _extract_training_status(data: dict) -> dict:
+    mts = (data or {}).get("mostRecentTrainingStatus") or {}
+    device_data = mts.get("latestTrainingStatusData") or {}
+    entry = next(
+        (v for v in device_data.values() if v.get("primaryTrainingDevice")),
+        next(iter(device_data.values()), {}) if device_data else {},
+    )
+    acwr = entry.get("acuteTrainingLoadDTO") or {}
+
+    lb_map = ((data or {}).get("mostRecentTrainingLoadBalance") or {}).get(
+        "metricsTrainingLoadBalanceDTOMap"
+    ) or {}
+    lb_entry = next(
+        (v for v in lb_map.values() if v.get("primaryTrainingDevice")),
+        next(iter(lb_map.values()), {}) if lb_map else {},
+    )
+
+    return {
+        "training_status_phrase": entry.get("trainingStatusFeedbackPhrase"),
+        "training_load_balance":  lb_entry.get("trainingBalanceFeedbackPhrase"),
+        "acwr_status":            acwr.get("acwrStatus"),
+    }
+
+
 def _fetch_day(api, d: str) -> tuple[dict, list[str]]:
     """Returns (row_dict, list_of_error_strings). Never raises."""
     row: dict = {"date": d}
@@ -152,8 +176,9 @@ def _fetch_day(api, d: str) -> tuple[dict, list[str]]:
     except Exception as e:
         errors.append(f"training_readiness: {e}")
 
-    try_update("endurance", lambda: _extract_endurance_score(api.get_endurance_score(d, d)))
-    try_update("fitness_age", lambda: _extract_fitness_age(api.get_fitnessage_data(d)))
+    try_update("endurance",        lambda: _extract_endurance_score(api.get_endurance_score(d, d)))
+    try_update("fitness_age",      lambda: _extract_fitness_age(api.get_fitnessage_data(d)))
+    try_update("training_status",  lambda: _extract_training_status(api.get_training_status(d)))
 
     return row, errors
 

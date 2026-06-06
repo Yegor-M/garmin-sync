@@ -106,6 +106,9 @@ training_readiness_level  VARCHAR        -- 'PRIME', 'GOOD', 'MODERATE', etc.
 recovery_time_hours     INTEGER
 endurance_score         INTEGER          -- raw Garmin scale (~3570–10560)
 fitness_age             FLOAT            -- Garmin's computed fitness age
+training_status_phrase  VARCHAR          -- 'PRODUCTIVE', 'PEAKING', 'DETRAINING', 'OVERREACHING', etc.
+training_load_balance   VARCHAR          -- 'BELOW_TARGETS', 'WITHIN_TARGETS', 'ABOVE_TARGETS'
+acwr_status             VARCHAR          -- acute:chronic workload ratio — 'LOW', 'OPTIMAL', 'HIGH'
 ```
 
 **health_activities** — one row per workout
