@@ -59,7 +59,12 @@ CREATE TABLE IF NOT EXISTS health_days (
 
     -- long-term fitness metrics (update slowly)
     endurance_score           INTEGER,
-    fitness_age               FLOAT
+    fitness_age               FLOAT,
+
+    -- training status (from get_training_status)
+    training_status_phrase    VARCHAR,   -- 'PRODUCTIVE', 'PEAKING', 'DETRAINING', 'OVERREACHING', etc.
+    training_load_balance     VARCHAR,   -- 'BELOW_TARGETS', 'WITHIN_TARGETS', 'ABOVE_TARGETS'
+    acwr_status               VARCHAR    -- acute:chronic workload ratio — 'LOW', 'OPTIMAL', 'HIGH'
 );
 
 CREATE TABLE IF NOT EXISTS health_activities (
