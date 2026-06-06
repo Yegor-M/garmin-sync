@@ -222,6 +222,7 @@ def _fetch_activities(api, start: str, end: str) -> tuple[list[dict], list[str]]
             "training_effect_aerobic":   a.get("aerobicTrainingEffect"),
             "training_effect_anaerobic": a.get("anaerobicTrainingEffect"),
             "training_load":             a.get("activityTrainingLoad"),
+            "avg_pace_min_km":           round(1000 / a["averageSpeed"] / 60, 2) if a.get("averageSpeed") else None,
             "hr_zone1_min": None, "hr_zone2_min": None, "hr_zone3_min": None,
             "hr_zone4_min": None, "hr_zone5_min": None,
         }
