@@ -1,50 +1,35 @@
 # garmin-sync
 
-Sync your Garmin Connect health and fitness data to a local [DuckDB](https://duckdb.org) file you can query with plain SQL.
+Your Garmin data, in plain SQL.
 
-> **Unofficial API:** This project uses [`garminconnect`](https://github.com/cyberjunky/python-garminconnect), which wraps Garmin Connect's undocumented internal web API. Endpoints may change without notice. Intended for personal use only — your own data, not others'.
-
----
-
-Garmin Connect holds years of your health data — sleep stages, HRV, training load, Body Battery, heart rate — but gives you no good way to query it. garmin-sync pulls it into a local DuckDB file on a daily schedule so you can ask real questions:
+Pulls sleep, HRV, training load, Body Battery, and workout history from Garmin Connect into a local DuckDB file — queryable with any SQL tool, notebook, or AI assistant.
 
 ```sql
--- Sleep quality vs training load
+-- How does training load affect recovery?
 SELECT date, sleep_score, training_readiness_score, hrv_last_night
-FROM health_days ORDER BY date DESC LIMIT 30;
+FROM   health_days
+ORDER BY date DESC LIMIT 30;
 
--- Which activity types leave you most recovered the next day?
-SELECT a.activity_type, ROUND(AVG(d.hrv_last_night), 1) AS next_day_hrv
-FROM health_activities a
-JOIN health_days d ON d.date = a.date + INTERVAL 1 DAY
-GROUP BY a.activity_type ORDER BY next_day_hrv DESC;
+-- Which activity type leaves you most recovered the next day?
+SELECT   a.activity_type,
+         ROUND(AVG(d.hrv_last_night), 1) AS next_day_hrv
+FROM     health_activities a
+JOIN     health_days d ON d.date = a.date + INTERVAL 1 DAY
+GROUP BY a.activity_type
+ORDER BY next_day_hrv DESC;
 ```
 
-Works standalone as a SQL data source for notebooks, dashboards, or custom scripts. Also the health data backend for [Personalkin](https://github.com/Yegor-M/personalkin), an MCP server for AI assistants.
+> **Unofficial API** — uses [`garminconnect`](https://github.com/cyberjunky/python-garminconnect), which wraps Garmin Connect's undocumented internal API. Personal use only.
 
 ---
 
 ## How it works
 
 ```
-Garmin Connect (cloud)
-        │
-        │  garminconnect  ·  unofficial REST API
-        ▼
-    sync.py
-        │
-        ├── health_days          one row per calendar date
-        │   sleep · HRV · RHR   steps · stress · Body Battery
-        │   SpO2 · training readiness · training status
-        │
-        └── health_activities    one row per workout
-            type · duration · HR zones · pace · training load
-        │
-        ▼
-   garmin.duckdb  ──►  SQL queries · notebooks · MCP tools
+Garmin Connect  ──[ garminconnect ]──▶  sync.py  ──▶  garmin.duckdb
 ```
 
-Each sync is idempotent — re-running a date safely overwrites existing rows.
+`sync.py` calls each endpoint, extracts fields, and upserts into DuckDB. Re-running the same date is safe — all syncs are idempotent.
 
 ---
 
@@ -54,27 +39,23 @@ Each sync is idempotent — re-running a date safely overwrites existing rows.
 
 | Category | Fields |
 |---|---|
-| Sleep | `sleep_score`, `sleep_qualifier`, `sleep_total_min`, `sleep_deep_min`, `sleep_rem_min`, `sleep_light_min`, `sleep_awake_min`, `sleep_spo2_avg`, `sleep_rr_avg` |
+| Sleep | `sleep_score`, `sleep_total_min`, `sleep_deep_min`, `sleep_rem_min`, `sleep_spo2_avg`, `sleep_rr_avg` |
 | HRV | `hrv_last_night`, `hrv_weekly_avg`, `hrv_baseline_low/high`, `hrv_status` |
-| Heart rate | `rhr`, `hr_min`, `hr_max` |
+| Heart rate | `rhr`, `hr_min`, `hr_max`, `stress_avg` |
 | Body Battery | `bb_max`, `bb_min`, `bb_end` |
-| Movement | `steps`, `step_goal`, `distance_km`, `floors_up`, `calories_total/active/bmr` |
-| Intensity | `moderate_activity_min`, `vigorous_activity_min` |
+| Movement | `steps`, `distance_km`, `floors_up`, `calories_total` |
 | Respiration | `spo2_avg`, `spo2_min`, `rr_waking_avg` |
-| Training | `training_readiness_score/level`, `recovery_time_hours`, `endurance_score`, `fitness_age` |
-| Training status | `training_status_phrase`, `training_load_balance`, `acwr_status` |
+| Training | `training_readiness_score`, `training_status_phrase`, `acwr_status`, `recovery_time_hours`, `endurance_score`, `fitness_age` |
 
 ### `health_activities` — one row per workout
 
 | Field | Notes |
 |---|---|
-| `activity_type` | `running`, `strength_training`, `cycling`, `boxing`, etc. |
-| `duration_min`, `distance_km` | |
+| `activity_type` | `running`, `strength_training`, `cycling`, `boxing`, … |
+| `duration_min`, `distance_km`, `avg_pace_min_km` | pace is null for non-GPS activities |
 | `avg_hr`, `max_hr` | |
-| `hr_zone1_min` … `hr_zone5_min` | Minutes spent in each HR zone |
-| `avg_pace_min_km` | Null for non-GPS activities (strength, MMA, etc.) |
-| `training_load` | Garmin's composite training stress score |
-| `training_effect_aerobic`, `training_effect_anaerobic` | 0–5 scale |
+| `hr_zone1_min` … `hr_zone5_min` | minutes in each HR zone |
+| `training_load`, `training_effect_aerobic`, `training_effect_anaerobic` | 0–5 scale for effects |
 
 ---
 
@@ -83,90 +64,62 @@ Each sync is idempotent — re-running a date safely overwrites existing rows.
 ```bash
 git clone https://github.com/Yegor-M/garmin-sync.git
 cd garmin-sync
-cp .env.example .env          # add GARMIN_EMAIL and GARMIN_PASSWORD
-python3 setup.py              # installs deps, authenticates, backfills, fetches physiology
+cp .env.example .env        # add GARMIN_EMAIL and GARMIN_PASSWORD
+python3 setup.py            # deps → auth → backfill → physiology
 ```
 
-`setup.py` is idempotent — safe to re-run if a step fails. It skips anything already done.
+`setup.py` is idempotent — safe to re-run if any step fails.
+
+> **Rate limits:** Garmin returns 429 on too many login attempts from one IP. Wait 30–60 min or use a US VPN, then retry.
 
 <details>
-<summary>Manual steps (if you prefer)</summary>
+<summary>Manual steps</summary>
 
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 .venv/bin/python auth.py
 .venv/bin/python sync.py --backfill 30
-.venv/bin/python fetch_physiology.py   # optional — pulls profile, race preds, PRs
+.venv/bin/python fetch_physiology.py   # optional: age, weight, race preds, PRs
 ```
 
 </details>
-
-> **Rate limits:** Garmin returns 429 if login is attempted too frequently from one IP. If this happens, wait 30–60 minutes or use a VPN (US server), then retry.
 
 ---
 
 ## Usage
 
 ```bash
-# Sync yesterday + today (default — catches late-arriving data)
-.venv/bin/python sync.py
-
-# Sync a specific date
-.venv/bin/python sync.py --date 2026-05-15
-
-# Backfill last N days (run once after setup)
-.venv/bin/python sync.py --backfill 365
-
-# Inspect raw API responses for a date (writes JSON to data/raw/)
-.venv/bin/python explore.py --date 2026-05-21
+.venv/bin/python sync.py                      # yesterday + today
+.venv/bin/python sync.py --date 2026-05-15    # specific date
+.venv/bin/python sync.py --backfill 365       # last N days
+.venv/bin/python explore.py --date 2026-05-21 # dump raw JSON to data/raw/
+.venv/bin/python fetch_physiology.py          # refresh profile + race predictions
 ```
 
 ---
 
 ## Automation
 
-### macOS — launchd (recommended)
-
-Unlike cron, launchd fires on wake if the Mac was asleep at the scheduled time.
-
-Create `~/Library/LaunchAgents/com.garmin-sync.daily.plist`:
+**macOS — launchd** (fires on wake, unlike cron):
 
 ```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
-  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>com.garmin-sync.daily</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>/absolute/path/to/garmin-sync/.venv/bin/python</string>
-        <string>/absolute/path/to/garmin-sync/sync.py</string>
-    </array>
-    <key>StartCalendarInterval</key>
-    <dict>
-        <key>Hour</key><integer>8</integer>
-        <key>Minute</key><integer>0</integer>
-    </dict>
-    <key>StandardOutPath</key><string>/tmp/garmin-sync.log</string>
-    <key>StandardErrorPath</key><string>/tmp/garmin-sync.log</string>
-    <key>EnvironmentVariables</key>
-    <dict>
-        <key>GARMIN_EMAIL</key><string>your@email.com</string>
-        <key>GARMIN_PASSWORD</key><string>yourpassword</string>
-    </dict>
+<!-- ~/Library/LaunchAgents/com.garmin-sync.daily.plist -->
+<key>ProgramArguments</key><array>
+    <string>/path/to/garmin-sync/.venv/bin/python</string>
+    <string>/path/to/garmin-sync/sync.py</string>
+</array>
+<key>StartCalendarInterval</key><dict>
+    <key>Hour</key><integer>8</integer>
+    <key>Minute</key><integer>0</integer>
 </dict>
-</plist>
 ```
 
 ```bash
 launchctl load ~/Library/LaunchAgents/com.garmin-sync.daily.plist
-launchctl list | grep garmin-sync   # verify it's registered
 ```
 
-### Linux — cron
+**Linux — cron:**
 
 ```bash
 0 8 * * * cd /path/to/garmin-sync && .venv/bin/python sync.py >> /tmp/garmin-sync.log 2>&1
@@ -176,4 +129,4 @@ launchctl list | grep garmin-sync   # verify it's registered
 
 ## Use with Personalkin
 
-[Personalkin](https://github.com/Yegor-M/personalkin) is an MCP server that connects AI assistants to your personal data. Point its `GARMIN_DB` env var at `garmin.duckdb` and it can answer questions about your sleep, training, and recovery directly in Claude, Cursor, or any MCP-compatible client.
+[Personalkin](https://github.com/Yegor-M/Personalkin) is an MCP server that connects AI assistants directly to your Garmin data. Point its `GARMIN_DB` env var at `garmin.duckdb` and ask questions in plain language — "How did I sleep this week?", "Show last week's training load" — from Claude, Cursor, or any MCP-compatible client.
