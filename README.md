@@ -81,20 +81,26 @@ Each sync is idempotent — re-running a date safely overwrites existing rows.
 ## Setup
 
 ```bash
-# 1. Clone and install
 git clone https://github.com/Yegor-M/garmin-sync.git
 cd garmin-sync
+cp .env.example .env          # add GARMIN_EMAIL and GARMIN_PASSWORD
+python3 setup.py              # installs deps, authenticates, backfills, fetches physiology
+```
+
+`setup.py` is idempotent — safe to re-run if a step fails. It skips anything already done.
+
+<details>
+<summary>Manual steps (if you prefer)</summary>
+
+```bash
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
-
-# 2. Add credentials
-cp .env.example .env
-# Edit .env — fill in GARMIN_EMAIL and GARMIN_PASSWORD
-
-# 3. Authenticate (first time only)
 .venv/bin/python auth.py
-# Session saved to .garth/ — subsequent runs reuse it without re-authenticating
+.venv/bin/python sync.py --backfill 30
+.venv/bin/python fetch_physiology.py   # optional — pulls profile, race preds, PRs
 ```
+
+</details>
 
 > **Rate limits:** Garmin returns 429 if login is attempted too frequently from one IP. If this happens, wait 30–60 minutes or use a VPN (US server), then retry.
 

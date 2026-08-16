@@ -9,6 +9,7 @@ runs an initial backfill, and fetches your physiology profile.
 Safe to re-run; skips steps already done.
 """
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -57,24 +58,27 @@ def garmin_auth():
         return
 
     env_file = HERE / ".env"
-    if not env_file.exists():
+    has_env_vars = os.environ.get("GARMIN_EMAIL") and os.environ.get("GARMIN_PASSWORD")
+
+    if not env_file.exists() and not has_env_vars:
         print()
         email    = ask("Garmin email")
         password = ask("Garmin password")
         env_file.write_text(f"GARMIN_EMAIL={email}\nGARMIN_PASSWORD={password}\n")
         ok(".env written")
-    else:
+    elif env_file.exists():
         ok(".env found")
+    else:
+        ok("credentials found in environment")
 
     info("Authenticating (may take ~10s)...")
-    try:
-        run([python(), "auth.py"], cwd=HERE)
-        ok("authenticated")
-    except RuntimeError as e:
-        warn(f"Auth failed: {e}")
-        warn("If it keeps failing, try: .venv/bin/python auth_interactive.py")
+    result = subprocess.run([python(), "auth.py"], cwd=HERE)
+    if result.returncode != 0:
+        warn("Auth failed — try: .venv/bin/python auth_interactive.py")
         if ask("Continue anyway?", "y").lower() != "y":
             sys.exit(1)
+    else:
+        ok("authenticated")
 
 
 def initial_sync():
