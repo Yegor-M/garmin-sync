@@ -23,6 +23,59 @@ ORDER BY next_day_hrv DESC;
 
 ---
 
+## Quick start
+
+**1. Clone and configure**
+
+```bash
+git clone https://github.com/yehomak/garmin-sync.git
+cd garmin-sync
+cp .env.example .env
+```
+
+Open `.env` and fill in your Garmin Connect credentials:
+
+```
+GARMIN_EMAIL=you@example.com
+GARMIN_PASSWORD=yourpassword
+```
+
+**2. Run setup**
+
+```bash
+python3 setup.py
+```
+
+This installs dependencies, authenticates with Garmin, backfills recent history, and fetches your physiology profile (age, weight, race predictions). Safe to re-run.
+
+**3. Query your data**
+
+```bash
+duckdb garmin.duckdb
+```
+
+```sql
+-- Last 7 days at a glance
+SELECT date, sleep_score, hrv_last_night, training_readiness_score, steps
+FROM health_days
+ORDER BY date DESC
+LIMIT 7;
+```
+
+**4. Schedule daily syncs** *(optional)*
+
+On macOS, run `python3 setup.py` in [Personalkin](https://github.com/Yegor-M/Personalkin) — it generates and loads the launchd agent for you. On Linux, add a cron job:
+
+```bash
+0 8 * * * cd /path/to/garmin-sync && .venv/bin/python sync.py
+```
+
+**5. Connect to AI** *(optional)*
+
+[Personalkin](https://github.com/Yegor-M/Personalkin) is an MCP server that lets Claude query your data in plain language. Point it at `garmin.duckdb` and ask things like *"How did I sleep this week?"* or *"Show my training load trend."*
+
+---
+
 ## How it works
 
 ```
