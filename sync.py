@@ -5,6 +5,7 @@ Usage:
   python sync.py                     # yesterday + today (catches late-arriving data)
   python sync.py --date 2026-05-01   # specific date
   python sync.py --backfill 365      # last N days
+  python sync.py --status            # show DB summary without syncing
 """
 
 import argparse
@@ -24,6 +25,19 @@ SCHEMA_PATH = Path(__file__).parent / "schema.sql"
 
 # Show one line per day for short syncs; milestone % updates for long ones
 VERBOSE_THRESHOLD = 14
+
+
+def _call(fn, retries: int = 2, wait: int = 5):
+    """Call fn(), retrying up to `retries` times on 429 / rate-limit errors."""
+    for attempt in range(retries + 1):
+        try:
+            return fn()
+        except Exception as e:
+            msg = str(e).lower()
+            if ("429" in msg or "too many" in msg) and attempt < retries:
+                time.sleep(wait * (attempt + 1))
+                continue
+            raise
 
 
 def _init_db(con: duckdb.DuckDBPyConnection) -> None:
@@ -159,7 +173,7 @@ def _fetch_day(api, d: str) -> tuple[dict, list[str]]:
 
     def try_update(name: str, extract_fn):
         try:
-            row.update(extract_fn())
+            row.update(_call(extract_fn))
         except Exception as e:
             errors.append(f"{name}: {e}")
 
@@ -168,7 +182,7 @@ def _fetch_day(api, d: str) -> tuple[dict, list[str]]:
     try_update("hrv",      lambda: _extract_hrv(api.get_hrv_data(d)))
 
     try:
-        tr = _extract_training_readiness(api.get_training_readiness(d))
+        tr = _extract_training_readiness(_call(lambda: api.get_training_readiness(d)))
         hrv_fallback = tr.pop("_hrv_weekly_from_readiness", None)
         row.update(tr)
         if hrv_fallback and not row.get("hrv_weekly_avg"):
@@ -228,7 +242,7 @@ def _fetch_activities(api, start: str, end: str) -> tuple[list[dict], list[str]]
         }
 
         try:
-            details = api.get_activity_details(int(activity_id)) or {}
+            details = _call(lambda: api.get_activity_details(int(activity_id))) or {}
             zones = (details.get("summaryDTO") or {}).get("hrZones") or []
             for i, z in enumerate(zones[:5], 1):
                 row[f"hr_zone{i}_min"] = _secs_to_min(z.get("secsInZone"))
@@ -303,16 +317,40 @@ def sync_range(start: date, end: date) -> None:
     con.close()
 
 
+def show_status() -> None:
+    if not DB_PATH.exists():
+        print("garmin.duckdb not found — run sync.py to create it")
+        return
+    con = duckdb.connect(str(DB_PATH), read_only=True)
+    days_row = con.execute(
+        "SELECT COUNT(*), MIN(date)::VARCHAR, MAX(date)::VARCHAR FROM health_days"
+    ).fetchone()
+    act_count = con.execute("SELECT COUNT(*) FROM health_activities").fetchone()[0]
+    con.close()
+
+    session = (Path(__file__).parent / ".garth" / "garmin_tokens.json").exists()
+    size_kb = DB_PATH.stat().st_size // 1024
+
+    count, first, last = days_row
+    print(f"Database:    {DB_PATH} ({size_kb} KB)")
+    print(f"health_days: {count} rows  {first} → {last}")
+    print(f"activities:  {act_count} rows")
+    print(f"Session:     {'cached (.garth/)' if session else 'not found — run auth.py'}")
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--date",     help="Sync a specific date (YYYY-MM-DD)")
     group.add_argument("--backfill", type=int, metavar="DAYS", help="Sync last N days")
+    group.add_argument("--status",   action="store_true",      help="Show DB summary")
     args = parser.parse_args()
 
     today = date.today()
 
-    if args.date:
+    if args.status:
+        show_status()
+    elif args.date:
         d = date.fromisoformat(args.date)
         sync_range(d, d)
     elif args.backfill:

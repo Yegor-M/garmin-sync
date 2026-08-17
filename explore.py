@@ -18,6 +18,7 @@ from pathlib import Path
 from auth import get_client
 
 OUT = Path(__file__).parent / "data" / "raw"
+OUT.mkdir(parents=True, exist_ok=True)
 
 
 def dump(name: str, data) -> None:

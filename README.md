@@ -146,6 +146,7 @@ python3 -m venv .venv
 .venv/bin/python sync.py                      # yesterday + today
 .venv/bin/python sync.py --date 2026-05-15    # specific date
 .venv/bin/python sync.py --backfill 365       # last N days
+.venv/bin/python sync.py --status             # DB summary — rows, date range, session
 .venv/bin/python explore.py --date 2026-05-21 # dump raw JSON to data/raw/
 .venv/bin/python fetch_physiology.py          # refresh profile + race predictions
 ```
